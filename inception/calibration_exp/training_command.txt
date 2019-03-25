@@ -1,0 +1,1 @@
+python retrain_cal_exp_balanced_drop.py --bottleneck-dir=/home/plantvillage/Desktop/cal_exp --how_many_training_steps 500 --model_dir=/home/plantvillage/Desktop/cal_exp --output_graph=/home/plantvillage/Desktop/cal_exp/retrained_graph.pb --image_dir /home/plantvillage/Dropbox/Calibration_Paper/images
