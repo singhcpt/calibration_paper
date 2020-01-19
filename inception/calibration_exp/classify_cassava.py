@@ -21,10 +21,11 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-
+import random
 import numpy as np
 import tensorflow as tf
-
+import matplotlib.pyplot as plt
+import math
 
 def load_graph(model_file):
   graph = tf.Graph()
@@ -42,7 +43,16 @@ def read_tensor_from_image_file(file_name,
                                 input_height=299,
                                 input_width=299,
                                 input_mean=0,
-                                input_std=255):
+                                input_std=255,
+                                random_brightness=0,
+                                random_crop=0,
+                                random_scale=0,
+                                random_theta=0,
+                                random_shear=0,
+                                random_translate_x=0,
+                                random_translate_y=0,
+                                random_standard_dev=0.0):
+                                
   input_name = "file_reader"
   output_name = "normalized"
   file_reader = tf.read_file(file_name, input_name)
@@ -61,11 +71,79 @@ def read_tensor_from_image_file(file_name,
   dims_expander = tf.expand_dims(float_caster, 0)
   resized = tf.image.resize_bilinear(dims_expander, [input_height, input_width])
   normalized = tf.divide(tf.subtract(resized, [input_mean]), [input_std])
-  sess = tf.Session()
-  result = sess.run(normalized)
+
+  ## DISTORTIONS ##
+  margin_scale = 1.0 + (random_crop / 100.0)
+  resize_scale = 1.0 + (random_scale / 100.0)
+  margin_scale_value = tf.constant(margin_scale)
+  resize_scale_value = tf.random_uniform(shape=[],
+                                         minval=1.0,
+                                         maxval=resize_scale)
+  scale_value = tf.multiply(margin_scale_value, resize_scale_value)
+  precrop_width = tf.multiply(scale_value, input_width)
+  precrop_height = tf.multiply(scale_value, input_height)
+  precrop_shape = tf.stack([precrop_height, precrop_width])
+  precrop_shape_as_int = tf.cast(precrop_shape, dtype=tf.int32)
+  precropped_image = tf.image.resize_bilinear(normalized,
+                                              precrop_shape_as_int)
+  precropped_image_3d = tf.squeeze(precropped_image, axis=[0])
+  cropped_image = tf.random_crop(precropped_image_3d,
+                                 [input_height, input_width, 3])
+
+  brightness_min = 1.0 - (random_brightness / 100.0)
+  brightness_max = 1.0 + (random_brightness / 100.0)
+  brightness_value = tf.random_uniform(shape=[],
+                                       minval=brightness_min,
+                                       maxval=brightness_max)
+  brightened_image = tf.multiply(cropped_image, brightness_value)
+
+  # Custom augmentations
+  '''
+  skewed_image = tf.keras.preprocessing.image.apply_affine_transform(
+    tf.Session().run(brightened_image),
+    theta=random.randrange(0, random_theta, 1),
+    tx=0,
+    ty=0,
+    shear=random.randrange(0, random_shear, 1),
+    zx=1,
+    zy=1,
+    row_axis=0,
+    col_axis=1,
+    channel_axis=2,
+    fill_mode='nearest',
+    cval=0.0,
+    order=1
+  )
+  '''
+  rotated_image = tf.contrib.image.rotate(brightened_image, math.radians(random.randrange(0,120)))
+  translated_image = tf.contrib.image.translate(rotated_image, translations=[random.randrange(0, random_translate_x, 1), random.randrange(0, random_translate_y, 1)])
+  noise = tf.random_normal(shape=tf.shape(translated_image), mean=0.0, stddev=randrange_float(0, random_standard_dev, 0.001), dtype=tf.float32)
+  noise_image = translated_image + noise
+
+  distort_result = tf.expand_dims(noise_image, 0, name='DistortResult')
+
+  #sess = tf.Session()
+  #result = sess.run(distort_result)
+
+  #show_image(distort_result, normalized)
 
   return result
 
+def randrange_float(start, stop, step):
+    return random.randint(0, int((stop - start) / step)) * step + start
+
+def show_image(distort, norm):
+  show_sess = tf.Session()
+  darr = show_sess.run(distort)
+  darr_ = np.squeeze(darr)
+
+  narr = show_sess.run(norm)
+  narr_ = np.squeeze(narr)
+
+  plt.imshow(narr_)
+  plt.show()
+  plt.imshow(darr_)
+  plt.show()
 
 def load_labels(label_file):
   label = []

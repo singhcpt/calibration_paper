@@ -129,6 +129,7 @@ import collections
 from datetime import datetime
 import hashlib
 import os.path
+import math
 import random
 import re
 import sys
@@ -150,7 +151,6 @@ CHECKPOINT_NAME = '/tmp/_retrain_checkpoint'
 # if it contains any of these ops.
 FAKE_QUANT_OPS = ('FakeQuantWithMinMaxVars',
                   'FakeQuantWithMinMaxVarsPerChannel')
-
 
 def create_image_lists(image_dir, testing_percentage, validation_percentage):
   """Builds a list of training images from the file system.
@@ -217,6 +217,7 @@ def create_image_lists(image_dir, testing_percentage, validation_percentage):
     testing_images = file_base_list[int(train_percent*file_base_list_size):]
     validation_images = file_base_list[int(train_percent*file_base_list_size):]
     print(len(training_images), len(testing_images), len(validation_images))
+    print(training_images[0])
     result[label_name] = {
     'dir': dir_name,
     'training': training_images,
@@ -607,7 +608,8 @@ def should_distort_images(flip_left_right, random_crop, random_scale,
 
 
 def add_input_distortions(flip_left_right, random_crop, random_scale,
-                          random_brightness, module_spec):
+                          random_brightness, random_theta, random_shear, 
+                          random_translate_x, random_translate_y, random_standard_dev, module_spec):
   """Creates the operations to apply the specified distortions.
 
   During training it can help to improve the results if we run the images
@@ -693,10 +695,37 @@ def add_input_distortions(flip_left_right, random_crop, random_scale,
   brightness_value = tf.random_uniform(shape=[],
                                        minval=brightness_min,
                                        maxval=brightness_max)
+  
   brightened_image = tf.multiply(flipped_image, brightness_value)
-  distort_result = tf.expand_dims(brightened_image, 0, name='DistortResult')
+  
+  '''
+  skewed_image = tf.keras.preprocessing.image.apply_affine_transform(
+    brightened_image.eval(),
+    theta=random.randrange(0, random_theta, 1),
+    tx=0,
+    ty=0,
+    shear=random.randrange(0, random_shear, 1),
+    zx=1,
+    zy=1,
+    row_axis=0,
+    col_axis=1,
+    channel_axis=2,
+    fill_mode='nearest',
+    cval=0.0,
+    order=1
+  )
+  '''
+  
+  rotated_image = tf.contrib.image.rotate(brightened_image, math.radians(random.randrange(0,120)))
+  translated_image = tf.contrib.image.translate(rotated_image, translations=[random.randrange(0, random_translate_x, 1), random.randrange(0, random_translate_y, 1)])
+  noise = tf.random_normal(shape=tf.shape(translated_image), mean=0.0, stddev=randrange_float(0, random_standard_dev, 0.001), dtype=tf.float32)
+  noise_image = translated_image + noise
+
+  distort_result = tf.expand_dims(noise_image, 0, name='DistortResult')
   return jpeg_data, distort_result
 
+def randrange_float(start, stop, step):
+    return random.randint(0, int((stop - start) / step)) * step + start
 
 def variable_summaries(var):
   """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
@@ -1013,9 +1042,12 @@ def main(_):
     return -1
 
   # See if the command-line flags mean we're applying any distortions.
-  do_distort_images = should_distort_images(
-      FLAGS.flip_left_right, FLAGS.random_crop, FLAGS.random_scale,
-      FLAGS.random_brightness)
+  # Commented out to add custom decision to distort or not
+  # do_distort_images = should_distort_images(
+  #    FLAGS.flip_left_right, FLAGS.random_crop, FLAGS.random_scale,
+  #    FLAGS.random_brightness)
+
+  do_distort_images = FLAGS.should_distort
 
   # Set up the pre-trained graph.
   module_spec = hub.load_module_spec(FLAGS.tfhub_module)
@@ -1043,7 +1075,9 @@ def main(_):
       (distorted_jpeg_data_tensor,
        distorted_image_tensor) = add_input_distortions(
            FLAGS.flip_left_right, FLAGS.random_crop, FLAGS.random_scale,
-           FLAGS.random_brightness, module_spec)
+           FLAGS.random_brightness, FLAGS.random_theta, FLAGS.random_shear, 
+           FLAGS.random_translate_x, FLAGS.random_translate_y, 
+           FLAGS.random_standard_dev, module_spec)
     else:
       # We'll make sure we've calculated the 'bottleneck' image summaries and
       # cached them on disk.
@@ -1169,7 +1203,12 @@ def main(_):
   class_dict = {"banana_healthy": "Banana_HL", "banana_speck": "Banana_Speck", "corn_gray_leaf_spot": "Corn_G.L.S", "corn_healthy": "Corn_H.L", "potato_early_blight": "Potato_E.B", "potato_healthy": "Potato_H.L", "soy_frogeye_leaf_spot": "Soy_Frg.E.Sp", "soy_healthy": "Soy.B_HL", "tomato_healthy": "Tom._Healthy.L", "tomato_septoria": "Tom_Septoria.LS"}
   class_dict_clean = {"banana healthy": "banana_healthy", "banana speck": "banana_speck", "corn gray leaf spot": "corn_gray_leaf_spot", "corn healthy": "corn_healthy", "potato early blight": "potato_early_blight", "potato healthy": "potato_healthy", "soy frogeye leaf spot": "soy_frogeye_leaf_spot", "soy healthy": "soy_healthy", "tomato healthy": "tomato_healthy", "tomato septoria": "tomato_septoria"}
   
-  
+  testing_list = open("/Volumes/Samsung_T5/Calibration_Paper/testing_images.txt", "w")
+  for disease_class, disease_set in eval_set.items():
+    for item in disease_set:
+      testing_list.write(item + "\n")
+  testing_list.close()
+
   model_file = FLAGS.output_graph
   label_file = "/tmp/output_labels.txt"
   input_height = 299
@@ -1204,13 +1243,22 @@ def main(_):
       counts.append([0, 0]) # First index of nested array is the total number of boxes, second is the correct number of boxes on the image
     for file_name in disease_set:
       total_count += 1
-      file_name = "/home/plantvillage/Dropbox/Calibration_Paper/images/" + disease_class.replace(" ", "_") + "/" + file_name
+      file_name = "/Volumes/Samsung_T5/Calibration_Paper/images/" + disease_class.replace(" ", "_") + "/" + file_name
+
       t = classify.read_tensor_from_image_file(
         file_name,
         input_height=input_height,
         input_width=input_width,
         input_mean=input_mean,
-        input_std=input_std)
+        input_std=input_std,
+        random_brightness=FLAGS.random_brightness,
+        random_crop=FLAGS.random_crop,
+        random_scale=FLAGS.random_scale,
+        random_theta=FLAGS.random_theta,
+        random_shear=FLAGS.random_shear,
+        random_translate_x=FLAGS.random_translate_x,
+        random_translate_y=FLAGS.random_translate_y,
+        random_standard_dev=FLAGS.random_standard_dev)
       
       input_name = "import/" + input_layer
       output_name = "import/" + output_layer
@@ -1557,6 +1605,14 @@ if __name__ == '__main__':
       """
   )
   parser.add_argument(
+      '--should_distort',
+      type=bool,
+      default=True,
+      help="""\
+      Flag determines whether training should include augmentation. Testing always will include augmentation.\
+      """
+  )
+  parser.add_argument(
       '--flip_left_right',
       default=False,
       help="""\
@@ -1591,6 +1647,52 @@ if __name__ == '__main__':
       input pixels up or down by.\
       """
   )
+
+  parser.add_argument(
+      '--random_theta',
+      type=int,
+      default=0,
+      help="""\
+      Angle to determine how much to randomly rotate image.\
+      """
+  )
+
+  parser.add_argument(
+      '--random_shear',
+      type=int,
+      default=0,
+      help="""\
+      Angle to determine how much to randomly shear image.\
+      """
+  )
+
+  parser.add_argument(
+      '--random_translate_x',
+      type=int,
+      default=0,
+      help="""\
+      Value to determine how much to randomly translate image along x axis.\
+      """
+  )
+
+  parser.add_argument(
+      '--random_translate_y',
+      type=int,
+      default=0,
+      help="""\
+      Value to determine how much to randomly translate image along y axis.\
+      """
+  )
+
+  parser.add_argument(
+      '--random_standard_dev',
+      type=float,
+      default=0.0,
+      help="""\
+      Decimal value that determines how much random noise is added to image.\
+      """
+  )
+
   parser.add_argument(
       '--tfhub_module',
       type=str,

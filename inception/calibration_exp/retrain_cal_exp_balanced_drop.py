@@ -67,7 +67,7 @@ import numpy as np
 from six.moves import urllib
 import tensorflow as tf
 
-from tensorflow.python.client import graph_util
+from tensorflow.python.framework import graph_util
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.platform import gfile
 
@@ -130,6 +130,9 @@ tf.app.flags.DEFINE_string('run_name', datetime.now().strftime("%Y-%m-%d_%H-%M-%
                            """The name of the run for Tensorboard display""")
 
 # Controls the distortions used during training.
+tf.app.flags.DEFINE_boolean(
+    'should_distort', True,
+    """Whether to apply any distortions.""")
 tf.app.flags.DEFINE_boolean(
     'flip_left_right', False,
     """Whether to randomly flip half of the training images horizontally.""")
@@ -681,7 +684,8 @@ def should_distort_images(flip_left_right, random_crop, random_scale,
 
 
 def add_input_distortions(flip_left_right, random_crop, random_scale,
-                          random_brightness):
+                          random_brightness, random_theta, random_shear, 
+                          random_translate_x, random_translate_y, random_standard_dev):
   """Creates the operations to apply the specified distortions.
 
   During training it can help to improve the results if we run the images
@@ -765,8 +769,34 @@ def add_input_distortions(flip_left_right, random_crop, random_scale,
                                        minval=brightness_min,
                                        maxval=brightness_max)
   brightened_image = tf.mul(flipped_image, brightness_value)
-  distort_result = tf.expand_dims(brightened_image, 0, name='DistortResult')
+  
+  # Custom augmentations
+  skewed_image = tf.keras.preprocessing.image.apply_affine_transform(
+    tf.Session().run(brightened_image),
+    theta=random.randrange(0, random_theta, 1)
+    tx=0,
+    ty=0,
+    shear=random.randrange(0, random_shear, 1)
+    zx=1,
+    zy=1,
+    row_axis=0,
+    col_axis=1,
+    channel_axis=2,
+    fill_mode='nearest',
+    cval=0.0,
+    order=1
+  )
+
+  translated_image = tf.contrib.image.translate(skewed_image, translations=[random.randrange(0, random_translate_x, 1), random.randrange(0, random_translate_y, 1])
+  noise = tf.random_normal(shape=tf.shape(translated_image), mean=0.0, stddev=randrange_float(0, random_standard_dev, 0.001), dtype=tf.float32)
+  noise_image = translated_image + noise
+
+  distort_result = tf.expand_dims(noise_image, 0, name='DistortResult')
+
   return jpeg_data, distort_result
+
+def randrange_float(start, stop, step):
+    return random.randint(0, int((stop - start) / step)) * step + start
 
 def nn_layer(input_tensor, input_dim, output_dim, layer_name, activation_name='activation', act=tf.nn.softmax):
     """Reusable code for making a simple neural net layer.
@@ -925,16 +955,20 @@ def main(_):
     return -1
 
   # See if the command-line flags mean we're applying any distortions.
+  '''
   do_distort_images = should_distort_images(
       FLAGS.flip_left_right, FLAGS.random_crop, FLAGS.random_scale,
       FLAGS.random_brightness)
+  '''
+  do_distort_images = FLAGS.should_distort
   sess = tf.Session()
 
   if do_distort_images:
     # We will be applying distortions, so setup the operations we'll need.
     distorted_jpeg_data_tensor, distorted_image_tensor = add_input_distortions(
         FLAGS.flip_left_right, FLAGS.random_crop, FLAGS.random_scale,
-        FLAGS.random_brightness)
+        FLAGS.random_brightness, FLAGS.random_theta, FLAGS.random_shear, 
+        FLAGS.random_translate_x, FLAGS.random_translate_y, FLAGS.random_standard_dev)
   else:
     # We'll make sure we've calculated the 'bottleneck' image summaries and
     # cached them on disk.

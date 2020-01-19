@@ -1,1 +1,8 @@
-python retrain_cal_exp_balanced_drop.py --bottleneck-dir=/home/plantvillage/Desktop/cal_exp --how_many_training_steps 500 --model_dir=/home/plantvillage/Desktop/cal_exp --output_graph=/home/plantvillage/Desktop/cal_exp/retrained_graph.pb --image_dir /home/plantvillage/Dropbox/Calibration_Paper/images
+python retrain_cal_exp_balanced_drop.py --bottleneck-dir=/home/plantvillage/Desktop/cal_exp --how_many_training_steps 500 --model_dir=/home/plantvillage/Desktop/cal_exp --output_graph=/home/plantvillage/Desktop/cal_exp/retrained_graph.pb --image_dir /home/plantvillage/Dropbox/Calibration_Paper/images --random_brightness=10 --random_crop=10 --random_scale=25
+
+
+python retrain_cal_exp_balanced_drop.py --bottleneck-dir=/Volumes/Samsung_T5/Calibration_Paper --how_many_training_steps 500 --model_dir=/Volumes/Samsung_T5/Calibration_Paper --output_graph=/Volumes/Samsung_T5/Calibration_Paper --image_dir /Volumes/Samsung_T5/Calibration_Paper/images --random_brightness=10 --random_crop=10 --random_scale=25
+
+
+python retrain_cal_exp_balanced.py --bottleneck-dir=/Volumes/Samsung_T5/Calibration_Paper --how_many_training_steps 10 --model_dir=/Volumes/Samsung_T5/Calibration_Paper --output_graph=/Volumes/Samsung_T5/Calibration_Paper/first_real_aug_test.pb --image_dir=/Volumes/Samsung_T5/Calibration_Paper/images --random_brightness=100 --random_crop=10 --random_scale=20 --random_theta=30 --random_shear=50 --random_translate_x=10 --random_translate_y=10 --random_standard_dev=0.1
+
